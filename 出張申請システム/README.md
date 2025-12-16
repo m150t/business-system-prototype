@@ -7,5 +7,7 @@
 
   Run `npm i` to install the dependencies.
 
-  Run `npm run dev` to start the development server.
+  Frontend: Run `npm run dev` to start the development server.
+
+  Backend (簡易APIサーバー): Run `npm run server` to start the JSON file-based API server on port 4000.
   

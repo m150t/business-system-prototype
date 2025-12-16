@@ -1,42 +1,79 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { TripRequestForm } from './components/TripRequestForm';
 import { TripRequestList } from './components/TripRequestList';
 import { ExpenseSettlement } from './components/ExpenseSettlement';
 import { Plane, Receipt, List } from 'lucide-react';
 import type { TripRequest, Expense } from './types';
+import { api } from './lib/api';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<'request' | 'list' | 'settlement'>('request');
   const [tripRequests, setTripRequests] = useState<TripRequest[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleAddTripRequest = (request: Omit<TripRequest, 'id' | 'createdAt' | 'status'>) => {
-    const newRequest: TripRequest = {
-      ...request,
-      id: Date.now().toString(),
-      status: 'pending',
-      createdAt: new Date().toISOString(),
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        const [requests, expenseList] = await Promise.all([
+          api.fetchTripRequests(),
+          api.fetchExpenses(),
+        ]);
+        setTripRequests(requests);
+        setExpenses(expenseList);
+      } catch (err) {
+        console.error(err);
+        setError('データの取得に失敗しました。バックエンドサーバーが起動していることを確認してください。');
+      } finally {
+        setLoading(false);
+      }
     };
-    setTripRequests([newRequest, ...tripRequests]);
-    setActiveTab('list');
+
+    loadData();
+  }, []);
+
+  const handleAddTripRequest = async (request: Omit<TripRequest, 'id' | 'createdAt' | 'status'>) => {
+    try {
+      const created = await api.createTripRequest(request);
+      setTripRequests([created, ...tripRequests]);
+      setActiveTab('list');
+    } catch (err) {
+      console.error(err);
+      setError('出張申請の登録に失敗しました。');
+    }
   };
 
-  const handleUpdateStatus = (id: string, status: 'approved' | 'rejected') => {
-    setTripRequests(tripRequests.map(req => 
-      req.id === id ? { ...req, status } : req
-    ));
+  const handleUpdateStatus = async (id: string, status: 'approved' | 'rejected') => {
+    try {
+      const updated = await api.updateTripStatus(id, status);
+      setTripRequests(tripRequests.map(req =>
+        req.id === id ? updated : req
+      ));
+    } catch (err) {
+      console.error(err);
+      setError('ステータスの更新に失敗しました。');
+    }
   };
 
-  const handleAddExpense = (expense: Omit<Expense, 'id'>) => {
-    const newExpense: Expense = {
-      ...expense,
-      id: Date.now().toString(),
-    };
-    setExpenses([newExpense, ...expenses]);
+  const handleAddExpense = async (expense: Omit<Expense, 'id'>) => {
+    try {
+      const created = await api.createExpense(expense);
+      setExpenses([created, ...expenses]);
+    } catch (err) {
+      console.error(err);
+      setError('経費の登録に失敗しました。関連する出張申請が承認済みか確認してください。');
+    }
   };
 
-  const handleDeleteExpense = (id: string) => {
-    setExpenses(expenses.filter(exp => exp.id !== id));
+  const handleDeleteExpense = async (id: string) => {
+    try {
+      await api.deleteExpense(id);
+      setExpenses(expenses.filter(exp => exp.id !== id));
+    } catch (err) {
+      console.error(err);
+      setError('経費の削除に失敗しました。');
+    }
   };
 
   return (
@@ -90,16 +127,26 @@ export default function App() {
 
           {/* コンテンツエリア */}
           <div className="p-6">
-            {activeTab === 'request' && (
+            {loading && (
+              <div className="text-center text-gray-600 py-8">データを読み込んでいます...</div>
+            )}
+
+            {error && (
+              <div className="mb-4 p-4 bg-red-50 border border-red-200 text-red-800 rounded-lg">
+                {error}
+              </div>
+            )}
+
+            {!loading && activeTab === 'request' && (
               <TripRequestForm onSubmit={handleAddTripRequest} />
             )}
-            {activeTab === 'list' && (
+            {!loading && activeTab === 'list' && (
               <TripRequestList
                 requests={tripRequests}
                 onUpdateStatus={handleUpdateStatus}
               />
             )}
-            {activeTab === 'settlement' && (
+            {!loading && activeTab === 'settlement' && (
               <ExpenseSettlement
                 tripRequests={tripRequests.filter(req => req.status === 'approved')}
                 expenses={expenses}
